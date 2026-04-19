@@ -1,370 +1,578 @@
 ---
 name: SPEC
-description: Skilflow product specification — active reference before every build session. v2.2
-version: v1.12
+description: Skilflow product specification — active reference before every build session. v2.3 — April 19, 2026
+version: v1.13
 status: production
 llm: claude
 owner: 
 tags: []
+last_updated: April 19, 2026
 ---
 
 # SKILFLOW — Product Specification
 
-**Version:** v2.2
+**Version:** v2.3
 **Created:** March 30, 2026
 **Author:** David Oliver Moreau
-**Last Updated:** April 12, 2026
 **Status:** Active — reference before every build session
+**Last Updated:** April 19, 2026
 
 ---
 
-## WHAT CHANGED IN v2.2
+## TABLE OF CONTENTS
 
-- Full-screen loading animation spec added (page load + sync)
-- Sync done state — conditional detail (only shown if changes occurred)
-- Drag and drop file upload spec added
-- Welcome screen + first-time dashboard spec added
-- Theme OS preference fix spec added
-- Analytics events + GTM installed
-- Backend role enforcement shipped
-- Workspace isolation shipped
-- Version lock shipped
-- Email invitations + accept flow shipped
+1. Product Overview & Positioning
+2. Design System
+3. Architecture
+4. User Tiers & Interaction Model
+5. Editor Interaction Model
+6. API Contract
+7. Data Models
+8. MCP Tools
+9. Feature List
+10. Open Items
+11. Roadmap
 
 ---
 
-## 1. PRODUCT OVERVIEW
+## 1. PRODUCT OVERVIEW & POSITIONING
 
-Skilflow is a skill management platform for AI assistants. Centralized place to create, version, validate, and publish AI skills across multiple LLM platforms — without touching Git, terminals, or markdown directly.
+### What is Skilflow?
 
-**The "Sharon test"** — could a non-technical, design-savvy person use this without instructions? If no, simplify it.
+Skilflow is a skill management platform for AI assistants. It provides a centralized place to create, version, validate, and publish AI skills (structured markdown instruction files) across multiple LLM platforms — without requiring users to touch Git, terminals, or markdown directly.
 
-**Design Principles:** Non-technical users first · Platform intelligence · Promotion gates · Shared ownership · No single point of failure · LLM-aware authoring · One-click everything
+### Core Positioning
+
+**Skilflow is infrastructure, not a destination for power users.**
+
+Power users never need to open Skilflow. They work in Claude, Claude Code, and GitHub. Skilflow runs silently in the background — syncing, versioning, making skills available to the team.
+
+Skilflow IS a destination for everyone else — the 90% who need guidance, templates, and a simple way to use what the power users built.
+
+### Three User Tiers
+
+**The creator (power user ~10%)**
+- Builds and refines skills from scratch
+- Works via MCP in Claude, GitHub push, Claude Code
+- Publishes skills to the org library
+- Reviews suggestions from others
+- Never needs to open the Skilflow UI unless managing the team
+
+**The collaborator (intermediate ~30%)**
+- Forks org or public templates
+- Customizes with guided builder
+- Contributes improvements back via "Suggest an edit"
+- Uses the full editor but doesn't build from scratch
+
+**The consumer (~60%)**
+- Opens a skill, clicks "Open in Claude", gets results
+- Never touches the editor or markdown
+- Sees consumer mode: one big CTA, no complexity
+- Can suggest edits via lightweight textarea flow
+
+### Design Principles
+
+1. **Infrastructure for power users** — invisible, syncs automatically, no extra steps
+2. **Destination for everyone else** — simple, guided, one-click
+3. **Non-technical users first** — no terminal, no JSON, no markdown required
+4. **Promotion gates** — explicit draft → staging → production workflow
+5. **Shared ownership** — skill owners manage content, platform manages deployment
+6. **One-click everything** — never more than 3 steps for consumers
+7. **Archive before delete** — never permanently remove without explicit confirmation
+
+**The "Sharon test"** — before shipping any feature: could a non-technical, design-savvy person use this without instructions? If no, simplify it.
 
 ---
 
 ## 2. DESIGN SYSTEM
 
-See `skilflow-ux` skill (v1.4) for full design system reference.
+### Brand
 
-**Brand summary:**
-- Logo: C3 at -10°, #7c3aed background, white bars
-- Wordmark: Sora 700. Dark: #f1f5f9 / #a78bfa. Light: #0f172a / #6d28d9
-- Brand: --brand #7c3aed, --brand-light #a78bfa (dark) / #6d28d9 (light)
-- Personality C: noise texture + gradient mesh + frosted nav + card glows + gradient button
-- Theme: defaults to OS preference (prefers-color-scheme), toggle cycles light/dark/system
+**Domain:** skilflow.ai
+**Tagline:** Teach AI once. Let your whole team benefit.
+
+**Logo mark — C3 at -10° (FINAL)**
+Three horizontal bars, decreasing width and opacity, each tilted -10°. Mark background: #7c3aed. Bars: white.
+
+**Wordmark:** Sora 700, 15px. Dark bg: "Skil" = #f1f5f9, "flow" = #a78bfa. Light bg: "Skil" = #0f172a, "flow" = #6d28d9.
+**Favicon:** #7c3aed background, white bars.
+
+### Brand Colors
+
+```css
+--brand:       #7c3aed
+--brand-light: #a78bfa  /* dark mode */
+--brand-light: #6d28d9  /* light mode */
+--brand-dim:   rgba(124,58,237,0.12)
+```
+
+Semantic: green (#10b981) production, amber (#f59e0b) staging/comments, red (#ef4444) errors.
+
+### Theme
+
+Defaults to OS preference. Toggle stored in localStorage.
+**Pre-auth pages force dark mode** — login, signup, join, invite, auth/confirm, welcome pages all enforce dark regardless of OS preference.
 
 ---
 
 ## 3. ARCHITECTURE
 
-**Stack:** React 18 · FastAPI Python 3.13 · Supabase PostgreSQL · FastMCP
+### Stack
 
-**URLs:**
-- app.skilflow.ai — React frontend
-- api.skilflow.ai — FastAPI port 8002 (skilflow.service)
-- mcp.skilflow.ai — FastMCP port 8003 (skilflow-mcp.service)
-- skilflow.ai — Landing page
-- Server: OVH VPS vps-e9b78f25.vps.ovh.net (Ubuntu 25.10)
+```
+Frontend:  React 18, React Router v6, Supabase JS, axios
+Backend:   FastAPI, Python 3.13, uvicorn, Anthropic SDK, GitPython
+Database:  Supabase (PostgreSQL) — Pro plan
+Email:     Resend (noreply@skilflow.ai)
+Analytics: GA4 (G-E1L57CNXM2) via GTM (GTM-N4NN73RR)
+MCP:       FastMCP Python server
 
-**MCP Server (LIVE April 12, 2026):**
-- Transport: Streamable HTTP. Auth: OAuth 2.1 + PKCE + API key fallback
-- Tools: list · get · save · update · publish · search
-- GitHub write-back: MCP updates commit to GitHub automatically
-- Branded connector manifest: /.well-known/mcp-manifest.json
+URLs:
+  app.skilflow.ai   → React frontend (nginx static)
+  api.skilflow.ai   → FastAPI port 8002 (systemd skilflow.service)
+  mcp.skilflow.ai   → FastMCP port 8003 (systemd skilflow-mcp.service)
+  skilflow.ai       → Landing page (static HTML)
+  Server: OVH VPS vps-e9b78f25.vps.ovh.net (Ubuntu)
+```
+
+### Infrastructure
+
+- **Supabase:** Pro plan — custom SMTP via Resend enabled
+- **Email:** Resend, domain skilflow.ai, SPF + DKIM + DMARC configured in GoDaddy
+- **GA4:** Consent Mode v2 — analytics_storage denied by default until user accepts cookie banner
+- **GTM:** Initialization - All Pages trigger (Consent Mode compatible)
+- **Cookie consent:** Custom banner, localStorage key `skilflow_cookie_consent`
+
+### MCP Server — LIVE
+
+**Transport:** Streamable HTTP
+**Auth:** OAuth 2.1 + PKCE, with API key fallback (`sk-skilflow-*`)
+**URL:** https://mcp.skilflow.ai/mcp
+
+**Tools (7):**
+- `skilflow_list_skills` — list skills, filter by status
+- `skilflow_get_skill` — get full content by name
+- `skilflow_save_skill` — create new skill
+- `skilflow_update_skill` — update existing skill
+- `skilflow_publish_skill` — promote to staging/production
+- `skilflow_search_skills` — search by keyword
+- `skilflow_share_as_template` — share skill as org or public template (pending)
+
+**Ops:**
 - Logs: `sudo journalctl -u skilflow-mcp -f`
+- Restart: `sudo systemctl restart skilflow-mcp`
 
-**Backend:** skilflow.service port 8002. Nginx proxy timeouts 300s.
+### Email Templates (Resend / Supabase)
 
-**Universal Markdown Sync:** All .md files. With frontmatter → skill. Without → document. .skilflowignore → skipped.
+All dark-themed, branded. Templates in Supabase Auth:
+- Confirm signup — uses `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup`
+- Reset password
+- Magic link
+- Invite user
+
+Custom emails via Resend:
+- Owner invite org — branded dark template
+- Access request notification — branded dark template
+- Post-approval welcome — green accent, quick-start steps
+- Feedback notification — type/rating/message to davoliver@gmail.com
+- Activation sequence — Day 1 (Claude), Day 3 (first skill), Day 7 (GitHub)
 
 ---
 
-## 4. TEAMS & PROJECTS MODEL
+## 4. USER TIERS & INTERACTION MODEL
 
-**Concept:**
-```
-User
-├── Personal skills (no project, owner only)
-└── Teams (one or many)
-    └── Projects (one or many per team)
-        └── Skills (one skill can belong to multiple projects)
-```
+### Role System
 
-**Roles (per project):**
-- Admin — full access, manage members, publish to production, approve changes
-- Editor — create/edit skills, publish to staging, comment
-- Viewer — read only, comment only
+| Role | Can do |
+|------|--------|
+| Owner | Everything + team management + billing |
+| Admin | Create/edit/publish skills, manage members, create org templates |
+| Editor | Create/edit/publish skills, suggest templates |
+| Viewer | View skills in consumer mode, suggest edits, leave comments |
 
-**Key tables:** teams · team_members · projects · project_members · skill_projects · team_invitations
+### Consumer Mode (Viewer role)
 
-**Email invitations:** Resend integration. Branded HTML email. Accept flow at /invite/:token. Redirects to /welcome/:team_id after first accept.
+When a Viewer opens a skill page they see a simplified view:
+- Skill name + one-line description
+- Status badge + version
+- **Big "Open in Claude" CTA** — most prominent element
+- Activation prompt copy block
+- "What this skill does" — collapsed expandable
+- "Suggest an edit" + "Leave a comment" footer
+- "Used by X team members" count
+
+No editor, no markdown, no version history visible by default.
+
+### Skill View Mode Toggle
+
+Admins can preview consumer mode via "Switch to consumer view" link.
 
 ---
 
 ## 5. EDITOR INTERACTION MODEL
 
-**Text selection tooltip:** Select text → Explain / Optimize / AI Editor / Comment.
-**Right panel:** Mode switcher tabs. Close button always visible.
-**Comment badges:** Amber pill on section headings. Clicking opens Comment tab.
-**AI Assistant:** POST /skills/ai-assistant · claude-haiku-4-5-20251001 · max_tokens 1000
+### Text Selection Tooltip
+
+Select any text → floating tooltip:
+- **Explain** — what this section does
+- **Optimize** — AI suggestions with diff
+- **AI Editor** — chat to rewrite
+- **Comment** — add team note
+
+### Right Panel
+
+Mode tabs: Explain / Optimize / AI Editor / Comment
+
+### Skill Actions (three-dot menu)
+
+1. Edit
+2. Move to another project (cross-org supported)
+3. Share as template (editor/admin only)
+4. Publish / Change status
+5. Archive → toast with 5s Undo
+6. ─── divider ───
+7. Delete permanently (only if archived) → requires typing DELETE
+
+### Archive-first policy
+
+Never permanently delete without:
+1. Skill must be archived first
+2. Delete permanently option only appears after archiving
+3. Confirmation modal requiring user to type "DELETE"
+4. Toast with undo for archive action
 
 ---
 
-## 6. LOADING ANIMATION SPEC
+## 6. API CONTRACT
 
-### Full-screen loader (page load + sync)
+All requests to `https://api.skilflow.ai`. Auth via Bearer token.
 
-Used in two moments: initial dashboard page load, and when sync runs.
+### Skills
+```
+GET/POST/PUT/DELETE /skills
+POST /skills/{name}/publish
+POST /skills/{name}/validate
+GET  /skills/{name}/history
+POST /skills/ai-assistant
+POST /skills/create/chat
+```
 
-**Visual:**
-- Full screen takeover, background #090c14
-- Subtle purple radial gradient background
-- Skilflow logo + wordmark centered at top
-- One step visible at a time: label (16px 600) + sub-label (12px #4b6082)
-- Single progress bar: 14px tall, border-radius 7px, #1a2236 bg, #7c3aed fill
-- Percentage below bar left: 11px 700 #a78bfa
-- Step counter below bar right: 11px #4b6082
+### Sync
+```
+POST /sync/github
+POST /sync/skills/{name}/exclude
+GET  /sync/settings/excluded-files
+```
 
-**Animation logic:**
-- Bar fills 0% → 88% over ~1400ms, then loops to next step
-- Never reaches 100% until API actually returns
-- When API returns → bar jumps to 100%, turns green #10b981
-- Done state appears after 600ms
+### Teams & Projects
+```
+GET/POST /teams
+GET/PUT/DELETE /teams/:id
+GET/POST /teams/:id/projects
+GET/POST /teams/:id/members
+POST /teams/:id/members/invite
+DELETE /teams/:id/members/:user_id
+PUT /projects/:id
+GET /projects/all  ← cross-org project list
+```
 
-**Page load steps:**
-1. Connecting to your library — Authenticating with GitHub and Supabase
-2. Loading your skills — Fetching skills from your workspace
-3. Checking for updates — Comparing local and remote versions
-4. Getting ready — Preparing your dashboard
+### Invitations
+```
+POST /owner/invite-org
+GET  /join/:slug (public)
+POST /join/:slug/accept
+GET  /invite/:token (public)
+POST /invite/:token/accept
+```
 
-**Sync steps:**
-1. Authenticating with GitHub — Verifying your personal access token
-2. Fetching skill files — Reading .md files from your repository
-3. Comparing records — Checking which files changed since last sync
-4. Updating changed skills — Writing new content and bumping versions
-5. Indexing documents — Tagging .md files without frontmatter
-6. Committing write-backs — Pushing MCP changes back to GitHub
+### Owner (davoliver@gmail.com only)
+```
+GET  /owner/stats
+GET  /owner/organizations
+GET  /owner/organizations/:id
+GET  /owner/organizations/:id/members
+GET  /owner/organizations/:id/projects
+GET  /owner/organizations/:id/invitations
+GET  /owner/organizations/:id/tokens
+DELETE /owner/organizations/:id/members/:user_id
+DELETE /owner/organizations/:id/invitations/:inv_id
+POST /owner/organizations/:id/invitations/:inv_id/dismiss
+POST /owner/organizations/:id/invitations/:inv_id/resend
+PUT  /owner/organizations/:id/tokens/limit
+POST /owner/organizations/:id/suspend
+DELETE /owner/organizations/:id
+GET  /owner/access-requests
+POST /owner/access-requests/:id/approve
+POST /owner/access-requests/:id/reject
+POST /owner/access-requests/:id/dismiss
+GET  /owner/feedback
+```
 
-### Done state — conditional
+### Templates
+```
+GET  /templates (public)
+POST /templates/:name/fork
+POST /templates/org/:name/fork
+POST /templates/generate-section
+GET  /templates/org  ← org-scoped templates
+```
 
-**If nothing changed (new=0, updated=0):**
-- Green checkmark + "All done · 86 unchanged"
-- "View your skills →" button only
-
-**If something changed:**
-- Green checkmark + "Sync complete"
-- Summary: "3 new · 12 updated · 86 unchanged"
-- Two columns (only shown if items exist):
-  - New: "+ skill-name" in green, max 5 then "+N more"
-  - Updated: "↑ skill-name (v1.1→v1.2)" in purple, max 5
-- "View your skills →" button
-
-**Backend sync response must include:**
-```json
-{
-  "new_skills": ["skill-name-1"],
-  "updated_skills": [{"name": "skill-name", "old_version": "v1.1", "new_version": "v1.2"}],
-  "unchanged_count": 86
-}
+### Misc
+```
+POST /feedback
+POST /access-requests (public)
 ```
 
 ---
 
-## 7. DRAG AND DROP UPLOAD
+## 7. DATA MODELS
 
-Drop zone above skill grid, always visible. Supports single or multiple .md files.
-
-**States:**
-1. Idle — dashed border, "Drop .md files here to import · or click to browse"
-2. Drag over — purple border pulses, shows file count badge
-3. Processing — each file shows with spinner → checkmark as frontmatter is read
-4. Result — summary line + each imported skill as card with "Open →"
-
-All imported skills land as draft. Files without valid frontmatter import as documents.
-
----
-
-## 8. ONBOARDING — NEW USER EXPERIENCE
-
-### Welcome page (/welcome/:token)
-Shown once after accepting invite. localStorage flag: `skilflow_welcomed_{team_id}`.
-
-- Logo + "You're in" eyebrow
-- "Welcome to [Team Name]"
-- Inviter context + role card (icon + role name + badge + what they can do)
-- 3-pillar explainer: Skills / Projects / Publish
-- CTA: "Explore your team's skills →"
-
-### First-time dashboard
-- Dismissable welcome banner (localStorage: `skilflow_banner_dismissed_{team_id}`)
-- Personal skills empty state with dashed card + CTA
-- Team context switcher pill in nav
-
----
-
-## 9. THEME SYSTEM
-
-Three options: Light / Dark / Use device setting (default).
-
-```javascript
-const savedTheme = localStorage.getItem('skilflow-theme');
-if (savedTheme && savedTheme !== 'system') {
-  document.documentElement.setAttribute('data-theme', savedTheme);
-} else {
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-}
-```
-
-OS change listener active when theme = 'system'. Settings → Preferences has 3-option selector.
-
----
-
-## 10. ANALYTICS & TRACKING
-
-**GTM:** GTM-N4NN73RR installed in React app index.html (head + body noscript).
-
-**Internal analytics table:**
+### skills table
 ```sql
-analytics_events(id, user_id, event_type, skill_name, metadata, created_at)
-event_type: skill_viewed | skill_edited | skill_published | mcp_tool_called | user_login
+id, name, content, description, status, version,
+file_type,          -- skill | document
+source_path,        -- GitHub path
+sync_status,        -- new | updated | null
+sync_status_at,
+is_template,        -- boolean, default false
+template_scope,     -- org | public | pending_public | null
+template_forked_from, -- source skill name if forked
+source,             -- template | manual | github | mcp
+created_at, updated_at
 ```
 
-**Analytics page (/analytics):** Active users 7d/30d · top skills · MCP call count · recent activity feed.
+### teams
+```sql
+id, name, description, status,  -- active | suspended
+created_at
+```
+
+### team_members
+```sql
+team_id, user_id, role,  -- owner | admin | editor | viewer
+created_at
+```
+
+### team_invitations
+```sql
+id, team_id, email, role, token, vanity_slug,
+custom_message, accepted, expires_at, created_at
+```
+
+### access_requests
+```sql
+id, full_name, email, company, use_case,
+status,  -- pending | approved | rejected | dismissed
+created_at
+```
+
+### feedback
+```sql
+id, user_id, type,  -- bug | feature | general
+rating, message, created_at
+```
+
+### template_forks
+```sql
+id, skill_name, user_id, forked_at
+```
+
+### user_activation
+```sql
+user_id, skill_created, claude_connected,
+github_connected, team_member_invited,
+checklist_dismissed_at, updated_at
+```
+
+### oauth_tokens
+```sql
+id, user_id, access_token, expires_at, created_at
+```
 
 ---
 
-## 11. DATA MODELS
+## 8. MCP TOOLS
 
-**skills:** id, name, description, content, version, status, llm, owner_id, file_type, source_path, sync_status, updated_at
+### Current tools (7)
 
-**comments:** id, skill_name, author_id, body, parent_id, created_at
+```
+skilflow_list_skills(status?)
+skilflow_get_skill(name)
+skilflow_save_skill(name, content, description, status)
+skilflow_update_skill(name, content?, description?, status?)
+skilflow_publish_skill(name, target)
+skilflow_search_skills(query)
+skilflow_share_as_template(name, scope)  ← pending
+```
 
-**skill_versions:** id, skill_name, version, content, change_note, changed_by, source, git_commit, created_at
+### skilflow_share_as_template
 
-**teams/projects:** see Section 4
+```python
+skilflow_share_as_template(name: str, scope: str)
+# scope: 'org' | 'public'
+# Sets is_template=true, template_scope=scope
+# Returns: { skill_name, scope, message }
+```
 
-**analytics_events:** id, user_id, event_type, skill_name, metadata, created_at
-
-**skill_reviews (Phase 2):** id, skill_name, proposed_by, proposed_content, base_version, status, review_note, reviewed_by, reviewed_at, created_at
+Power users can share templates directly from Claude:
+"Share my brand-voice skill as an org template"
 
 ---
 
-## 12. FEATURE LIST
+## 9. FEATURE LIST
 
-### Shipped (April 12, 2026)
-- [x] Auth: email/password, GitHub SSO, Google SSO
-- [x] Dashboard: grid + list, filters, search, sort, stats, sync badges
-- [x] Editor: markdown, metadata, history, comments, validate, publish
-- [x] AI editor: text selection tooltip, mode switcher (Explain/Optimize/AI Editor/Comment)
-- [x] Comment count badges + comments wired to API
-- [x] Skill creation assistant (Claude Haiku, guided)
-- [x] Universal markdown sync + .skilflowignore
-- [x] MCP server — OAuth 2.1, 6 tools, GitHub write-back, branded manifest
-- [x] Purple rebrand + Personality C
-- [x] Theme defaults to OS preference + system option in Settings
-- [x] Teams + Projects + Roles (UI + backend)
-- [x] Backend role enforcement
-- [x] Workspace isolation
-- [x] Version lock (409 conflict detection)
-- [x] Email invitations + accept flow (Resend)
-- [x] Welcome screen + first-time dashboard
-- [x] Analytics events + /analytics dashboard
-- [x] GTM-N4NN73RR installed
+### Shipped (April 2026)
 
-### In progress / next session
-- [ ] Full-screen loading animation (page load + sync)
-- [ ] Sync done state with conditional detail
-- [ ] Drag and drop file upload
-- [ ] Backend sync response with skill lists
+**Auth & Onboarding**
+- [x] Email/password auth via Supabase
+- [x] Email confirmation via /auth/confirm (PKCE flow)
+- [x] Vanity invite URLs: app.skilflow.ai/join/:slug
+- [x] Custom personal message on invite page
+- [x] Welcome screen after invite accept
+- [x] Activation checklist on dashboard
+- [x] Getting started checklist (dismissable)
+- [x] Duplicate email prevention on invites
+- [x] Pre-auth pages forced to dark mode
+- [x] Confidentiality agreement gate (pending — spec ready)
 
-### Phase 1.5
-- [ ] Browser extension (Chrome Manifest V3)
-- [ ] Skill conflict detection
-- [ ] AI publish notes
-- [ ] Skill ownership + approval flow
+**Dashboard**
+- [x] Grid + list view, filters, search, sort
+- [x] Stats: production / staging / draft counts
+- [x] Sync badges: New / Updated
+- [x] Team context switcher
+- [x] Dashboard filters simplified: All / Production / Staging / Draft
+- [x] Skill cards with category, version, author, project tag
+
+**Editor**
+- [x] Markdown editor with metadata panel
+- [x] Version history
+- [x] Text selection tooltip (Explain / Optimize / AI Editor / Comment)
+- [x] Right panel mode switcher
+- [x] Comment count badges on section headings
+- [x] Inline project rename
+- [x] Archive-first delete flow with typed confirmation
+- [x] Cross-org "Move to project" (all orgs shown grouped)
+
+**Teams & Projects**
+- [x] Team management (/teams, /teams/:id)
+- [x] Project management with skill list
+- [x] Member management with role badges
+- [x] Invite member with role pill selector (Admin/Editor/Viewer)
+- [x] Archived skills hidden from project views
+- [x] Consumer mode for Viewer role (pending Claude Code)
+
+**MCP**
+- [x] OAuth 2.1 + PKCE fully working
+- [x] 6 tools live and callable from Claude.ai
+- [x] /connect page — 3-step guided setup at app.skilflow.ai/connect
+- [x] Trouble state with common issue fixes
+
+**Owner Dashboard (/owner)**
+- [x] Platform stats: orgs, users, skills, API spend
+- [x] Access requests with approve/reject/dismiss
+- [x] Organizations list with suspend/delete/manage
+- [x] Full org detail page at /owner/organizations/:id
+- [x] Tabs: Overview / Members / Projects / Invitations / Token usage
+- [x] Skeleton loaders on all owner pages
+- [x] Owner not added as visible member to managed orgs
+
+**Template Store**
+- [x] Public /templates page (browseable without auth)
+- [x] 8 starter templates live in production
+- [x] Category filters: Communication / Marketing / Product / Sales / Operations
+- [x] Fork flow → guided builder
+- [x] Guided skill builder — section-by-section with AI explanation
+- [x] AI context prompt → generates customized version via Haiku
+- [x] Org template library at /templates/org (pending Claude Code)
+- [x] "Share as template" in skill menu (pending Claude Code)
+- [x] Templates nav link
+
+**Infrastructure**
+- [x] GitHub sync with .skilflowignore
+- [x] Universal markdown sync (all .md files)
+- [x] GA4 + GTM live with Consent Mode v2
+- [x] Cookie consent banner (GDPR/CCPA)
+- [x] Privacy policy at /privacy
+- [x] Feedback widget (purple floating button)
+- [x] DNS: SPF + DKIM + DMARC configured
+- [x] Resend email sending confirmed working
+- [x] Activation email sequence (pending Claude Code)
+
+### Pending
+
+- [ ] skilflow_share_as_template MCP tool
+- [ ] Org template library (/templates/org)
+- [ ] Consumer mode for Viewer role
+- [ ] Activation email sequence (Day 1/3/7)
+- [ ] Confidentiality agreement gate on invite accept
+- [ ] Comments backend wired to UI
+- [ ] Drag-and-drop file upload
 - [ ] Content moderation middleware
-- [ ] Testing suite (pytest + Playwright)
-
-### Phase 2+
-- [ ] Skill marketplace
-- [ ] Skill analytics + impact scoring
-- [ ] Publish project (batch)
-- [ ] Skill localization
-- [ ] Zapier + Slack integrations
+- [ ] Testing suite (pytest)
 
 ---
 
-## 13. OPEN ITEMS
+## 10. OPEN ITEMS
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| Loading animation | High | Claude Code prompt ready |
-| Drag and drop upload | High | Prototype approved |
-| Sync done state detail | High | Backend response change needed |
-| Content moderation | Medium | FastAPI middleware |
-| Testing Layer 1 | Medium | pytest |
-| Dashboard sort fix | Medium | Default updated_at DESC |
+| Consumer mode | High | Viewer role sees simplified skill view |
+| Org template library | High | Before Pearl demo |
+| Share as template | High | MCP tool + UI action |
+| Activation emails | High | Day 1/3/7 nudge sequence |
+| Confidentiality gate | High | Before any external invite |
+| Comments wiring | Medium | Backend exists, frontend pending |
+| Drag and drop | Medium | Prototype approved |
+| Content moderation | Low | FastAPI middleware |
+| Testing Layer 1 | Low | pytest, all endpoints |
 
 ---
 
-## 14. ROADMAP
+## 11. ROADMAP
 
 | Priority | Feature | Phase | Status |
 |----------|---------|-------|--------|
-| 1 | MCP server | 1.5 | ✅ Live |
-| 2 | Teams + Projects + Roles | 1.5 | ✅ Shipped |
-| 3 | Loading animation | 1.5 | Next session |
-| 4 | Browser extension | 1.5 | Planned |
-| 5 | Skill conflict detection | 1.5 | Planned |
-| 6 | Skill ownership + approval | 2 | Planned |
-| 7 | Skill analytics | 2 | Planned |
-| 8 | Skill marketplace | 2 | Planned |
-| 9 | Team branching | 3 | Planned |
-| 10 | Localization | 3 | Planned |
+| 1 | Org template library | 1.5 | Building |
+| 2 | Consumer mode | 1.5 | Building |
+| 3 | Activation email sequence | 1.5 | Pending |
+| 4 | Confidentiality gate | 1.5 | Pending |
+| 5 | Google Drive integration | 2 | Planned |
+| 6 | SharePoint integration | 2 | Planned |
+| 7 | Browser extension | 2 | Planned |
+| 8 | Skill analytics + usage tracking | 2 | Planned |
+| 9 | Public skill template store v2 (with ratings) | 3 | Planned |
+| 10 | Skill marketplace (living frameworks) | 3 | Planned |
+| 11 | Team branching + RBAC | 3 | Planned |
 
 ---
 
-## Session Notes — April 12, 2026
+## SESSION NOTES — April 13-19, 2026
 
-**Massive shipping day. Everything below landed in one session.**
+**Alpha launch prep:**
+- First external user onboarded (product director, Netflix/Disney+ background)
+- Pearl (hellopearl.com) demo scheduled — COO Ben + marketing lead Sébastien
+- Email confirmation flow debugged — root cause was localhost:3000 in Supabase Site URL
+- Vanity invite URL bug fixed — axios auth interceptor was cancelling public requests
+- DNS configured for email deliverability (SPF/DKIM/DMARC)
+- Owner dashboard rebuilt as full-page management at /owner/organizations/:id
 
-**Infrastructure:**
-- MCP OAuth 2.1 fully working (3 bug fixes)
-- GitHub write-back from MCP — updates commit automatically
-- Branded connector manifest + favicon
-- Nginx 300s timeout fix
+**Product decisions:**
+- Skilflow is infrastructure for power users, destination for everyone else
+- Three user tiers: creator / collaborator / consumer
+- Consumer mode: single CTA "Open in Claude", no editor visible
+- Template store: public generic templates + org-level curated templates
+- Guided skill builder: section-by-section with AI context → customized version
+- Archive-first policy: never delete without explicit typed confirmation
+- Cross-org skill movement supported
 
-**Design:**
-- Purple rebrand (#7c3aed) across app + landing
-- Personality C: noise, mesh, glows, frosted nav, gradient button
-- Theme defaults to OS preference
-- skilflow-ux v1.3 → v1.4 via MCP
+**8 starter templates created:**
+professional-email-tone, executive-summary, meeting-notes,
+content-brief-generator, user-story-writer, feature-prioritization,
+cold-outreach-email, sop-writer
 
-**Features shipped:**
-- Universal MD sync + .skilflowignore
-- Comments fully wired
-- Teams + Projects + Roles (full stack)
-- Workspace isolation
-- Backend role enforcement
-- Version lock (409)
-- Email invitations + accept flow
-- Welcome screen + first-time dashboard
-- Analytics events + dashboard
-- GTM-N4NN73RR
-
-**Prototypes approved:**
-- Full-screen loading animation (solid bar, one step at a time, loops until API returns)
-- Drag and drop upload (idle → drag over → processing → result)
-- Sync done state (conditional detail only if changes occurred)
-
-**Pending for next session:**
-- Implement loading animation (Claude Code prompt ready)
-- Implement drag and drop
-- Backend sync response with skill name lists
-- Dashboard sort fix (updated_at DESC)
+**3 Pearl demo skills created:**
+pearl-brand-voice, pearl-client-communication, pearl-proposal-writer
 
 ---
 
-*SPEC · v2.2 · April 12, 2026 · David Oliver Moreau*
+*Document: SPEC.md · Version: v2.3 · April 19, 2026 · David Oliver Moreau*
