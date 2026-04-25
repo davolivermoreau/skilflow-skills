@@ -1,11 +1,17 @@
 ---
 name: slimdoli-ai
-description: "Full briefing for the Slimdoli personal AI stack — architecture, URLs, credentials, status, GitHub sync, and roadmap for the self-hosted Open WebUI + LiteLLM + Claude API setup on OVH VPS"
+description: Full briefing for the Slimdoli personal AI stack — architecture, URLs, credentials, status, GitHub sync, upgrade procedures, and roadmap for the self-hosted Open WebUI + LiteLLM + Claude API setup on OVH VPS
+version: v1.1
+status: draft
+llm: claude
+owner: 
+tags: []
+last_updated: April 25, 2026
 ---
 
-**Content Source**: Slimdoli AI Stack build sessions, March 2026
+**Content Source**: Slimdoli AI Stack build sessions, March 2026; v0.9.2 upgrade session, April 25, 2026
 **Skill Owner**: David Oliver Moreau
-**Version**: v1.2 | **Updated**: March 30, 2026
+**Version**: v1.2 | **Updated**: April 25, 2026
 
 # SLIMDOLI AI STACK
 
@@ -20,7 +26,7 @@ This skill provides full context for the Slimdoli personal AI stack. Load it at 
 - Adding new features or integrations
 - Onboarding someone to manage the infrastructure
 - Planning the Mitel enterprise proposal
-- Any task involving the VPS, Open WebUI, LiteLLM, skills, or MCP server
+- Any task involving the VPS, Open WebUI, LiteLLM, or skills
 
 ---
 
@@ -39,11 +45,6 @@ User (browser/PWA) → https://ai.slimdoli.com → Nginx → Open WebUI → Lite
                                                                   (usage tracking)
 
 Admin dashboard → https://admin.slimdoli.com/ui → Nginx → LiteLLM UI
-
-Mitel Marketing MCP → https://ai.slimdoli.com/mcp/sse → Nginx → FastMCP (port 8000)
-                                                                          ↓
-                                                                     BigQuery
-                                                              (mitel-ga4-to-bigquery)
 ```
 
 ---
@@ -62,13 +63,9 @@ Mitel Marketing MCP → https://ai.slimdoli.com/mcp/sse → Nginx → FastMCP (p
 | IPv4 | 51.91.126.68 |
 | Hostname | vps-e9b78f25.vps.ovh.net |
 
-**SSH access:**
+**SSH access from Mac:**
 ```bash
-# From personal Mac (SSH key configured)
 ssh -o ServerAliveInterval=60 -i ~/.ssh/id_ed25519 ubuntu@vps-e9b78f25.vps.ovh.net
-
-# From work Mac (password auth — no SSH key)
-ssh ubuntu@vps-e9b78f25.vps.ovh.net
 ```
 
 ---
@@ -84,7 +81,6 @@ ssh ubuntu@vps-e9b78f25.vps.ovh.net
 | OVH Control Panel | https://ovhcloud.com | davoliver@gmail.com |
 | GoDaddy DNS | https://godaddy.com | davoliver@gmail.com |
 | Anthropic Console | https://console.anthropic.com | Personal account |
-| GCP Console | https://console.cloud.google.com | Project: mitel-ga4-to-bigquery |
 
 **DNS:** Both subdomains point to 51.91.126.68 via GoDaddy A records (TTL 600).
 **SSL:** Let's Encrypt via Certbot, auto-renewal configured.
@@ -102,6 +98,8 @@ ssh ubuntu@vps-e9b78f25.vps.ovh.net
 | ubuntu-litellm-1 | ghcr.io/berriai/litellm:main-stable | 4000 | API proxy + usage tracking |
 | ubuntu-postgres-1 | postgres:16 | 5432 | LiteLLM database |
 
+**Current Open WebUI version:** v0.9.2 (as of April 25, 2026)
+
 **Key commands:**
 ```bash
 # Start all
@@ -112,10 +110,6 @@ sudo docker compose -f ~/docker-compose.yml down
 
 # Force recreate (after config changes)
 sudo docker compose -f ~/docker-compose.yml up -d --force-recreate
-
-# Update Open WebUI
-sudo docker compose -f ~/docker-compose.yml pull open-webui
-sudo docker compose -f ~/docker-compose.yml up -d --force-recreate open-webui
 
 # Logs
 sudo docker logs ubuntu-open-webui-1 --tail 50
@@ -133,6 +127,92 @@ sudo docker ps
 
 ---
 
+## OPEN WEBUI UPGRADE PROCEDURE
+
+⚠️ **Major version upgrades may include database schema migrations.** v0.9.0 (April 2026) introduced schema changes. Always back up before any upgrade that crosses a major version boundary.
+
+⚠️ **Postgres user gotcha:** The default `postgres` role does NOT exist in `ubuntu-postgres-1`. The container is provisioned with `POSTGRES_USER=litellm` / `POSTGRES_DB=litellm`. Always use `-U litellm` for `pg_dumpall`, `psql`, etc. To verify env vars: `sudo docker exec ubuntu-postgres-1 env | grep -i postgres`.
+
+### Step 1 — Check current version
+```bash
+sudo docker exec ubuntu-open-webui-1 cat /app/package.json | grep version
+```
+
+### Step 2 — Backup (mandatory before major version crossings)
+```bash
+mkdir -p /home/ubuntu/backups
+
+# Open WebUI volume (users, chats, settings, skills metadata)
+sudo docker run --rm \
+  -v open-webui:/data \
+  -v /home/ubuntu/backups:/backup \
+  alpine tar czf /backup/open-webui-$(date +%Y%m%d-%H%M).tar.gz -C /data .
+
+# LiteLLM Postgres dump (note: -U litellm, NOT -U postgres)
+sudo docker exec ubuntu-postgres-1 pg_dumpall -U litellm > /home/ubuntu/backups/litellm-pg-$(date +%Y%m%d-%H%M).sql
+
+ls -lh /home/ubuntu/backups/
+```
+
+Expected sizes: volume backup typically 500MB–2GB depending on chat history; pg_dumpall typically 5–20MB.
+
+### Step 3 — Pull and recreate
+```bash
+cd /home/ubuntu
+sudo docker compose pull open-webui
+sudo docker compose up -d --force-recreate open-webui
+```
+
+This recreates only the open-webui container. LiteLLM and Postgres remain untouched.
+
+### Step 4 — Watch migration logs
+```bash
+sudo docker logs -f ubuntu-open-webui-1
+```
+
+Wait for either:
+- The v0.9.x banner showing the new version, OR
+- Steady HTTP 200 responses to `/api/version` and `/api/config`
+
+Press Ctrl+C to exit once stable. Abort if you see `ERROR` or `Traceback` lines.
+
+### Step 5 — Verify
+```bash
+sudo docker exec ubuntu-open-webui-1 cat /app/package.json | grep version
+curl -I https://ai.slimdoli.com
+sudo docker ps   # all 3 containers should show healthy
+```
+
+Then in browser: log in, confirm chats are present, confirm skills load in Workspace → Tools, send a test message to a Claude model.
+
+### Rollback (if needed)
+```bash
+# Stop the broken container
+sudo docker compose down open-webui
+
+# Restore the volume from backup
+sudo docker run --rm \
+  -v open-webui:/data \
+  -v /home/ubuntu/backups:/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/open-webui-YYYYMMDD-HHMM.tar.gz -C /data"
+
+# Pin to the previous working version in docker-compose.yml
+# Change: ghcr.io/open-webui/open-webui:main
+# To:     ghcr.io/open-webui/open-webui:v0.8.12  (or whatever the prior working version was)
+
+sudo docker compose up -d open-webui
+```
+
+### Backup retention
+Keep upgrade backups for at least 1 week after a successful upgrade. Once stable:
+```bash
+ls -lh /home/ubuntu/backups/
+rm /home/ubuntu/backups/open-webui-YYYYMMDD-HHMM.tar.gz
+rm /home/ubuntu/backups/litellm-pg-YYYYMMDD-HHMM.sql
+```
+
+---
+
 ## LITELLM CONFIGURATION
 
 **Config file:** `/home/ubuntu/litellm-config.yaml`
@@ -144,9 +224,10 @@ sudo docker ps
 
 **Master key:** `sk-litellm-master`
 
-**Open WebUI API:**
-- Base URL: `https://ai.slimdoli.com`
-- API Key: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijk1ZjgzMWU0LTk0ODQtNDJlYi1iZDZmLTQyM2JjZDQyY2I2MCIsImV4cCI6MTc3NzE5NTI4OSwianRpIjoiNWU0OWJhM2EtMTIwMy00NDIwLWFkNjctM2I0OWVlODA0MmU2In0._w5XcDoRgjva6HqY6is7Iel-NBgRYbq1-RQJ4emzm3E`
+**Postgres credentials** (provisioned via env vars in docker-compose.yml):
+- `POSTGRES_USER=litellm`
+- `POSTGRES_PASSWORD=litellm2026`
+- `POSTGRES_DB=litellm`
 
 **Virtual keys:**
 
@@ -155,7 +236,6 @@ sudo docker ps
 | David (davoliver@gmail.com) | sk-FCicbFgx8Vs5HO_jvQ6u_A | $50/month | All 3 |
 | Sharon (sliminny@gmail.com) | sk-fcrMKk4irobEGg79Anea8w | $20/month | Sonnet + Haiku |
 | Michael (michael.lamb@mitel.com) | sk-5a-EGNXSuZphcy0V_XM07A | $10/month | Sonnet + Haiku |
-| David Mitel (david.oliver@mitel.com) | sk-KhK3vClNa6SPPEqss2ZySw | $10/month | Sonnet + Haiku |
 
 **LiteLLM Team:** Personal ($50/month budget)
 
@@ -180,7 +260,6 @@ curl -X POST http://localhost:4000/key/generate \
 **Config files:**
 - `/etc/nginx/sites-available/ai.slimdoli.com`
 - `/etc/nginx/sites-available/admin.slimdoli.com`
-- `/etc/nginx/sites-available/api.slimdoli.com`
 
 ```bash
 sudo nginx -t                          # Test config
@@ -199,65 +278,9 @@ sudo certbot renew --dry-run           # Test SSL renewal
 
 ### Zapier MCP
 - Admin Panel → Settings → Integrations → Manage Tool Servers
-- Type: MCP
 - URL: `https://mcp.zapier.com/api/v1/connect`
 - Auth: Bearer token (personal Zapier account)
 - Connected: Gmail, Google Calendar, GA4, Asana
-
-### Mitel Marketing MCP
-- Admin Panel → Settings → Integrations → Manage Tool Servers
-- Type: MCP
-- URL: `https://ai.slimdoli.com/mcp/sse`
-- MCP ID: `mitel_marketing_mcp`
-- Auth: None
-- Purpose: BigQuery analytics tools for Mitel Marketing team (Open WebUI MCP transport)
-
-### Mitel Analytics REST
-- Admin Panel → Settings → Integrations → Manage Tool Servers
-- Type: OpenAPI
-- URL: `https://api.slimdoli.com`
-- OpenAPI spec: `https://api.slimdoli.com/openapi.json`
-- Auth: None
-- Purpose: Direct REST queries to same BigQuery tools — reliable fallback, also usable outside Open WebUI
-
-**MCP server files:** `/home/ubuntu/mitel-marketing-mcp/`
-**Service:** `mitel-mcp` (systemd)
-
-```bash
-# MCP server management
-sudo systemctl status mitel-mcp
-sudo systemctl restart mitel-mcp
-sudo journalctl -u mitel-mcp -n 20 --no-pager
-
-# Activate venv for manual testing
-cd ~/mitel-marketing-mcp
-source venv/bin/activate
-python3 server.py
-```
-
-**BigQuery connection:**
-- Project: `mitel-ga4-to-bigquery`
-- Service account: `mitel-marketing-mcp@mitel-ga4-to-bigquery.iam.gserviceaccount.com`
-- Credentials: `/home/ubuntu/mitel-marketing-mcp/credentials.json`
-- Roles: BigQuery Data Viewer + BigQuery Job User
-- Datasets: `analytics_373858783` (raw), `analytics_processed` (pre-aggregated)
-
-**Processed tables:**
-| Table | Rows | Purpose |
-|---|---|---|
-| `daily_page_performance` | ~72,820 | Page metrics by date |
-| `daily_utm_performance` | ~42,168 | Campaign/UTM metrics |
-| `session_attribution` | ~319,077 | Session-level attribution |
-| `form_submissions` | ~4,826 | Lead gen form completions |
-
-**MCP tools:**
-- `bigquery_list_tables` — list tables in a dataset
-- `bigquery_describe_table` — schema + field descriptions
-- `bigquery_run_query` — raw SQL (power users only)
-- `bigquery_get_page_performance` — page metrics by date range
-- `bigquery_get_utm_performance` — campaign performance
-- `bigquery_get_daily_metrics` — top-level daily metrics
-- `bigquery_get_form_conversions` — form type breakdown
 
 ---
 
@@ -270,7 +293,6 @@ python3 server.py
 | Claude Haiku | claude-haiku-4-5 | Public | Fast/cheap |
 | Mitel Marketing Assistant | Claude Sonnet | Public | Marketing with skills |
 | Mitel UX Assistant | Claude Sonnet | Public | UX/wireframes |
-| Mitel Analytics Assistant | Claude Sonnet | Public | Analytics + BigQuery via MCP |
 
 ---
 
@@ -345,15 +367,14 @@ Current spend (March 2026): ~$0.06 (testing only)
 
 ## PENDING ITEMS
 
+- [ ] BigQuery Python MCP tool — copy service account JSON to VPS, build tool
 - [ ] LiteLLM /ui redirect from admin.slimdoli.com root
 - [ ] Personal assistant system prompt
 - [ ] Docker Compose auto-start on VPS reboot
 - [ ] Tailscale — deferred, revisit later
 - [ ] Mitel pilot proposal with cost comparison
 - [ ] LiteLLM + VPN + SSO for Mitel production
-- [ ] Fix intermittent "Failed to connect to MCP server" warning in Open WebUI
-- [ ] Add session_attribution pre-built tool to Mitel Marketing MCP
-- [ ] Fix daily_metrics_historical table name reference in server.py
+- [ ] Consider pinning Open WebUI to a specific version tag (currently `:main`) for Phase 2 to make updates deliberate
 
 ---
 
@@ -378,21 +399,20 @@ Current spend (March 2026): ~$0.06 (testing only)
 - **external: true on open-webui volume** — prevents data loss when recreating Docker Compose stack
 - **Separate personal/work setup** — personal API key, separate from Mitel Claude Enterprise
 - **GitHub Actions for sync** — push to main triggers automatic skill upload to Open WebUI
-- **FastMCP SSE over FastAPI** — Open WebUI requires MCP type (SSE) for tools to appear in model builder; FastAPI OpenAPI spec doesn't integrate as tools
-- **MCP on same VPS** — lightweight process, shares nginx, credentials stay server-side
+- **`:main` tag on Open WebUI image** — convenient for Phase 1; should pin to specific version tag for Phase 2 onward to avoid surprise upgrades
 
 ---
 
 ## VERSION HISTORY
 
-### v1.2 (March 30, 2026)
-- Added Mitel Marketing MCP section under Integrations (full setup details, tools, BigQuery tables)
-- Added MCP server to architecture diagram
-- Added Mitel Analytics Assistant to Open WebUI models table
-- Added GCP Console to URLs & Access
-- Updated SSH section to document work Mac (password auth) vs personal Mac (key auth)
-- Updated pending items — removed BigQuery MCP (completed), added 3 new items
-- Added FastMCP SSE and MCP on same VPS to Key Decisions
+### v1.2 (April 25, 2026)
+- Added comprehensive Open WebUI Upgrade Procedure section with backup, recreate, verify, and rollback steps
+- Documented Postgres user gotcha (`POSTGRES_USER=litellm`, NOT `postgres` — `pg_dumpall -U postgres` will fail with "role does not exist")
+- Added permanent v0.9.0 schema migration warning for future major upgrades
+- Recorded successful upgrade: Open WebUI v0.8.12 → v0.9.2 (April 25, 2026, ~5 sec downtime, no data loss)
+- Added "Current Open WebUI version" reference under Docker Compose Stack
+- Added `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` to LiteLLM Configuration
+- Added pending item: consider pinning Open WebUI to specific version tag for Phase 2
 
 ### v1.1 (March 29, 2026)
 - Added GitHub Skills Repo section with auto-sync flow
@@ -411,5 +431,5 @@ Current spend (March 2026): ~$0.06 (testing only)
 
 *Skill ID: slimdoli-ai*
 *Version: v1.2*
-*Last Updated: March 30, 2026*
-*Status: Production*
+*Last Updated: April 25, 2026*
+*Status: Draft (pending promotion to Production)*
