@@ -2,7 +2,7 @@
 name: slimdoli-ai
 description: Full briefing for the Slimdoli personal AI stack — architecture, URLs, credentials, status, GitHub sync, upgrade procedures, and roadmap for the self-hosted Open WebUI + LiteLLM + Claude API setup on OVH VPS
 version: v1.1
-status: draft
+status: production
 llm: claude
 owner: 
 tags: []
